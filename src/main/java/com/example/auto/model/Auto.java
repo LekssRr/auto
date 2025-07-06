@@ -1,6 +1,7 @@
 package com.example.auto.model;
 
 import jakarta.persistence.*;
+import org.springframework.data.jpa.repository.EntityGraph;
 
 import java.util.ArrayList;
 import java.util.List;

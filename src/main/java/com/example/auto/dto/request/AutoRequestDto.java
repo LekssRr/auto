@@ -7,6 +7,9 @@ public class AutoRequestDto {
     private String vinCode;
     private String brandName;
 
+    public AutoRequestDto(){
+
+    }
     public AutoRequestDto(String modelName, String vinCode, String brandName) {
         this.modelName = modelName;
         this.vinCode = vinCode;

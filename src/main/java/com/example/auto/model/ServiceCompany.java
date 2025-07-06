@@ -1,17 +1,11 @@
 package com.example.auto.model;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Getter
-@Setter
-@RequiredArgsConstructor
 public class ServiceCompany {
 
     @Id
@@ -29,4 +23,45 @@ public class ServiceCompany {
     )
     private List<Auto> autos = new ArrayList<>();
 
+    public ServiceCompany(Integer id, String nameServiceCompany, String description, List<Auto> autos) {
+        this.id = id;
+        this.nameServiceCompany = nameServiceCompany;
+        this.description = description;
+        this.autos = autos;
+    }
+
+    public ServiceCompany() {
+    }
+
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public String getNameServiceCompany() {
+        return nameServiceCompany;
+    }
+
+    public void setNameServiceCompany(String nameServiceCompany) {
+        this.nameServiceCompany = nameServiceCompany;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public List<Auto> getAutos() {
+        return autos;
+    }
+
+    public void setAutos(List<Auto> autos) {
+        this.autos = autos;
+    }
 }
