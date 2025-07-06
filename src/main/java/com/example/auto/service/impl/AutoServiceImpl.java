@@ -6,8 +6,13 @@ import com.example.auto.dto.response.PostAutoResponseDto;
 import com.example.auto.model.Auto;
 import com.example.auto.repository.AutoRepository;
 import com.example.auto.service.AutoService;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 @Service
 public class AutoServiceImpl implements AutoService {
@@ -21,11 +26,26 @@ public class AutoServiceImpl implements AutoService {
 
     @Override
     public GetAutoResponseDto getAuto(AutoRequestDto auto) {
-        return null;
+        if (!autoRepository.findAutoByVinCode(auto.getVinCode()).isEmpty()) {
+            Auto resAuto = autoRepository.findAutoByVinCode(auto.getVinCode()).get();
+            return new GetAutoResponseDto(resAuto.getBrand(), resAuto.getNameModel(), resAuto.getServiceCompanies());
+        }
+        throw new RuntimeException("Авто не найдено");
     }
 
     @Override
+    @Transactional
     public PostAutoResponseDto postAuto(AutoRequestDto autoRequestDto) {
-        return null;
+        if (autoRepository.findAutoByVinCode(autoRequestDto.getVinCode()) == null) {
+            autoRepository.save(new Auto(
+                    autoRequestDto.getModelName(),
+                    autoRequestDto.getVinCode(),
+                    autoRequestDto.getBrandName(),
+                    new ArrayList<>()
+
+            ));
+            return new PostAutoResponseDto(true);
+        }
+        return new PostAutoResponseDto(false);
     }
 }

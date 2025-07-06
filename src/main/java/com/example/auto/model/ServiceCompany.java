@@ -28,4 +28,5 @@ public class ServiceCompany {
             inverseJoinColumns = @JoinColumn(name = "auto_id")
     )
     private List<Auto> autos = new ArrayList<>();
+
 }

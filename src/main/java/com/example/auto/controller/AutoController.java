@@ -22,7 +22,6 @@ public class AutoController {
     }
 
     @GetMapping("/")
-
     public ResponseEntity<GetAutoResponseDto> getAuto(@RequestParam String nameModel,
                                                       @RequestParam String vinCode,
                                                       @RequestParam String brandName) {
@@ -30,9 +29,7 @@ public class AutoController {
     }
 
     @PostMapping("/")
-    public ResponseEntity<PostAutoResponseDto> postAuto(@RequestParam String nameModel,
-                                                        @RequestParam String vinCode,
-                                                        @RequestParam String brandName) {
-        return ResponseEntity.ok(autoService.postAuto(new AutoRequestDto(nameModel, vinCode, brandName)));
+    public ResponseEntity<PostAutoResponseDto> postAuto(@RequestBody AutoRequestDto autoRequestDto ) {
+        return ResponseEntity.ok(autoService.postAuto(autoRequestDto));
     }
 }
