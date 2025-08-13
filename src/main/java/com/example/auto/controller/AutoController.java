@@ -32,4 +32,8 @@ public class AutoController {
     public ResponseEntity<PostAutoResponseDto> postAuto(@RequestBody AutoRequestDto autoRequestDto ) {
         return ResponseEntity.ok(autoService.postAuto(autoRequestDto));
     }
+    @GetMapping("/{id}")
+    public ResponseEntity<GetAutoResponseDto> getAutoToVin(@PathVariable String id){
+        return ResponseEntity.ok(autoService.isAutoByVin(id));
+    }
 }

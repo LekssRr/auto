@@ -1,4 +1,4 @@
-package com.example.auto.config;
+package com.example.auto.config.redis;
 
 
 import com.example.auto.dto.response.GetAutoResponseDto;
@@ -20,7 +20,7 @@ public class RedisConfiguration {
     @Bean
     public RedisCacheConfiguration cacheConfiguration() {
         return RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofMinutes(10))
+                .entryTtl(Duration.ofMinutes(5))
                 .disableCachingNullValues()
                 .serializeValuesWith(RedisSerializationContext.SerializationPair
                         .fromSerializer(new Jackson2JsonRedisSerializer<>(GetAutoResponseDto.class)));

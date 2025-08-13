@@ -14,6 +14,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -63,6 +64,22 @@ public class AutoServiceImpl implements AutoService {
             return new PostAutoResponseDto(true);
         }
         return new PostAutoResponseDto(false);
+    }
+
+    @Override
+    public GetAutoResponseDto isAutoByVin(String vin) {
+        Optional<Auto> autoByVinCode = autoRepository.findAutoByVinCode(vin);
+        if (autoByVinCode.isPresent()) {
+            return new GetAutoResponseDto(
+                    autoByVinCode.get().getNameModel(),
+                    autoByVinCode.get().getNameModel(),
+                    autoByVinCode.get().getServiceCompanies().stream()
+                            .map(sc -> new ServiceCompanyCacheDto(sc.getId(), sc.getNameServiceCompany(), sc.getDescription()))
+                            .collect(Collectors.toList())
+            );
+        }
+        return null;
+
     }
 }
 

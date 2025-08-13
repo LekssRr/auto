@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+service Auto {
+  rpc GetServiceCompany (VinCodeRequest) returns (DataResponse);
+}
+message VinCodeRequest {
+  string vinCode = 1;
+}
+
+message DataResponse {
+  string nameServiceCompany = 1;
+  int32 Discription = 2;
+}
