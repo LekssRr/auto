@@ -15,4 +15,5 @@ public interface AutoRepository extends JpaRepository<Auto, Integer> {
     @EntityGraph(attributePaths = {"serviceCompanies"})
     Optional<Auto> findAutoByVinCode(String vinCode);
 
+
 }

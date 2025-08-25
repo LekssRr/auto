@@ -71,7 +71,7 @@ public class AutoServiceImpl implements AutoService {
         Optional<Auto> autoByVinCode = autoRepository.findAutoByVinCode(vin);
         if (autoByVinCode.isPresent()) {
             return new GetAutoResponseDto(
-                    autoByVinCode.get().getNameModel(),
+                    autoByVinCode.get().getBrand(),
                     autoByVinCode.get().getNameModel(),
                     autoByVinCode.get().getServiceCompanies().stream()
                             .map(sc -> new ServiceCompanyCacheDto(sc.getId(), sc.getNameServiceCompany(), sc.getDescription()))
