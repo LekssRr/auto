@@ -1,6 +1,6 @@
 pipeline {
     agent any
-// ИЛИ для GitHub Webhook:
+
     triggers {
         githubPush()
     }
