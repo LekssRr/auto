@@ -1,16 +1,21 @@
 pipeline {
     agent any
-    tools {
-        maven 'M3'
-        jdk 'jdk17'
+
+    environment {
+        // Используем системные инструменты вместо настроенных в Jenkins
+        JAVA_HOME = '/usr/lib/jvm/java-17-openjdk-amd64'  // или другой путь к JDK 17
+        PATH = "${JAVA_HOME}/bin:/usr/share/maven/bin:${PATH}"
     }
+
     stages {
-        stage('Check Docker') {
+        stage('Check Tools') {
             steps {
                 script {
-                    // Проверяем что Docker доступен
+                    // Проверяем доступность всех необходимых инструментов
+                    echo 'Checking available tools...'
+                    sh 'java -version'
+                    sh 'mvn --version'
                     sh 'docker --version'
-                    echo 'Docker is available!'
                 }
             }
         }
