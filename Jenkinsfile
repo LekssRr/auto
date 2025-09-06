@@ -1,6 +1,9 @@
 pipeline {
     agent any
-
+// ИЛИ для GitHub Webhook:
+    triggers {
+        githubPush()
+    }
     environment {
         JAVA_HOME = '/usr/lib/jvm/java-17-openjdk-arm64'
         PATH = "${JAVA_HOME}/bin:/usr/share/maven/bin:${PATH}"
