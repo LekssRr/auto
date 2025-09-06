@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*;
 public class AutoController {
 
     private final AutoService autoService;
-ывфв
+
     @Autowired
     public AutoController(AutoService autoService) {
         this.autoService = autoService;
