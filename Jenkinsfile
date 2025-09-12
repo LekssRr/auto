@@ -10,7 +10,6 @@ pipeline {
         PATH = "${JAVA_HOME}/bin:/usr/share/maven/bin:${PATH}"
         DOCKER_IMAGE = "spring-app:${env.BUILD_NUMBER}"
         KUBE_NAMESPACE = "default"
-        MINIKUBE_IP = sh(script: "minikube ip", returnStdout: true).trim()
     }
 
     stages {
@@ -30,13 +29,13 @@ pipeline {
                         grep -E "(certificate-authority|client-certificate|client-key)" /var/jenkins_home/.kube/config || true
                     '''
 
-                    // Исправляем пути в kubeconfig
+                    // Исправляем пути в kubeconfig - убираем проблемный символ
                     sh '''
                         # Backup original config
                         cp /var/jenkins_home/.kube/config /var/jenkins_home/.kube/config.backup
 
-                        # Replace host paths with container paths
-                        sed -i 's|/Users/.*/\.minikube|/var/jenkins_home/.minikube|g' /var/jenkins_home/.kube/config
+                        # Replace host paths with container paths (исправленная версия)
+                        sed -i "s|/Users/.*/\\.minikube|/var/jenkins_home/.minikube|g" /var/jenkins_home/.kube/config
 
                         echo "Updated kubeconfig:"
                         grep -E "(certificate-authority|client-certificate|client-key)" /var/jenkins_home/.kube/config
@@ -163,9 +162,6 @@ pipeline {
 
                         echo "=== Deployments ==="
                         kubectl get deployments --namespace=${env.KUBE_NAMESPACE}
-
-                        echo "=== Deployment Details ==="
-                        kubectl describe deployment/spring-app --namespace=${env.KUBE_NAMESPACE}
                     """
 
                     // Получаем URL приложения
@@ -213,12 +209,6 @@ pipeline {
                 echo "📦 Docker Image: ${env.DOCKER_IMAGE}"
                 echo "🌐 Application URL: ${appUrl}"
                 echo "📊 Kubernetes Namespace: ${env.KUBE_NAMESPACE}"
-
-                // Показываем статус
-                sh """
-                    echo "Final status:"
-                    kubectl get pods,services,deployments --namespace=${env.KUBE_NAMESPACE}
-                """
             }
         }
         failure {
@@ -234,12 +224,6 @@ pipeline {
                     echo "=== Pod Logs ==="
                     kubectl logs -l app=spring-app --tail=50 --namespace=${env.KUBE_NAMESPACE} || true
 
-                    echo "=== Deployment Details ==="
-                    kubectl describe deployment/spring-app --namespace=${env.KUBE_NAMESPACE} || true
-
-                    echo "=== Events ==="
-                    kubectl get events --namespace=${env.KUBE_NAMESPACE} --sort-by='.lastTimestamp' | tail -20 || true
-
                     echo "=== Docker Images ==="
                     eval \$(minikube docker-env)
                     docker images | grep spring-app || true
@@ -249,7 +233,7 @@ pipeline {
         always {
             echo 'Pipeline execution completed'
             script {
-                // Очистка (опционально)
+                // Очистка
                 sh """
                     echo "Cleaning up temporary files..."
                     rm -f /var/jenkins_home/.kube/config.backup 2>/dev/null || true
