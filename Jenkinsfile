@@ -10,138 +10,154 @@ pipeline {
         PATH = "${JAVA_HOME}/bin:/usr/share/maven/bin:${PATH}"
         DOCKER_IMAGE = "spring-app:${env.BUILD_NUMBER}"
         KUBE_NAMESPACE = "default"
+        MINIKUBE_HOME = '/var/jenkins_home/.minikube'
+        KUBECONFIG = '/var/jenkins_home/.kube/config'
+        K8S_MANIFESTS_DIR = 'k8s'
     }
 
     stages {
-        stage('Verify Kubernetes Access') {
+        stage('Verify Setup') {
             steps {
                 script {
-                    echo 'Checking Kubernetes access configuration...'
+                    echo 'Verifying environment setup...'
 
-                    // Проверяем существование файлов сертификатов
-                    sh '''
-                        echo "Checking certificate files:"
-                        ls -la /var/jenkins_home/.minikube/ca.crt || echo "CA certificate not found"
-                        ls -la /var/jenkins_home/.minikube/profiles/minikube/client.crt || echo "Client certificate not found"
-                        ls -la /var/jenkins_home/.minikube/profiles/minikube/client.key || echo "Client key not found"
-
-                        echo "Current kubeconfig paths:"
-                        grep -E "(certificate-authority|client-certificate|client-key)" /var/jenkins_home/.kube/config || true
-                    '''
-
-                    // Исправляем пути в kubeconfig - убираем проблемный символ
-                    sh '''
-                        # Backup original config
-                        cp /var/jenkins_home/.kube/config /var/jenkins_home/.kube/config.backup
-
-                        # Replace host paths with container paths (исправленная версия)
-                        sed -i "s|/Users/.*/\\.minikube|/var/jenkins_home/.minikube|g" /var/jenkins_home/.kube/config
-
-                        echo "Updated kubeconfig:"
-                        grep -E "(certificate-authority|client-certificate|client-key)" /var/jenkins_home/.kube/config
-                    '''
-
-                    // Проверяем доступ к Kubernetes
-                    sh 'kubectl cluster-info || echo "Kubernetes access check failed"'
-                    sh 'kubectl get nodes || echo "Failed to get nodes"'
-                }
-            }
-        }
-
-        stage('Check Tools') {
-            steps {
-                script {
-                    echo 'Checking available tools...'
+                    // Проверяем основные инструменты
                     sh 'java -version'
                     sh 'mvn --version'
-                    sh 'docker --version'
                     sh 'kubectl version --client'
-                }
-            }
-        }
 
-        stage('Build and Test') {
-            steps {
-                script {
-                    sh 'mvn clean package -DskipTests'
-                }
-            }
-        }
-
-        stage('Setup Minikube Docker Environment') {
-            steps {
-                script {
-                    echo 'Setting up Minikube Docker environment...'
-                    // Настраиваем переменные окружения для доступа к Docker daemon Minikube
+                    // Проверяем манифесты
                     sh '''
-                        eval $(minikube docker-env)
-                        echo "Docker host set to: $DOCKER_HOST"
-                        docker info || echo "Docker daemon not accessible"
+                        echo "=== Checking Kubernetes manifests ==="
+                        ls -la ${K8S_MANIFESTS_DIR}/ || echo "Manifests directory not found"
+
+                        if [ -f "${K8S_MANIFESTS_DIR}/deployment.yaml" ]; then
+                            echo "Deployment manifest found"
+                            cat ${K8S_MANIFESTS_DIR}/deployment.yaml | head -10
+                        fi
+
+                        if [ -f "${K8S_MANIFESTS_DIR}/service.yaml" ]; then
+                            echo "Service manifest found"
+                            cat ${K8S_MANIFESTS_DIR}/service.yaml | head -10
+                        fi
                     '''
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Fix Kubernetes Access') {
             steps {
                 script {
-                    sh """
-                        eval \$(minikube docker-env)
-                        docker build -t ${env.DOCKER_IMAGE} .
-                        docker tag ${env.DOCKER_IMAGE} spring-app:latest
-                        echo "Docker image built: ${env.DOCKER_IMAGE}"
+                    echo 'Configuring Kubernetes access...'
 
-                        # Проверяем что образ создался
-                        docker images | grep spring-app
+                    sh '''
+                        # Создаем базовый kubeconfig если не существует
+                        if [ ! -f "${KUBECONFIG}" ]; then
+                            echo "Creating kubeconfig..."
+                            MINIKUBE_IP=$(minikube ip 2>/dev/null || echo "192.168.49.2")
+                            mkdir -p $(dirname ${KUBECONFIG})
+                            cat > ${KUBECONFIG} << EOF
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: ${MINIKUBE_HOME}/ca.crt
+    server: https://${MINIKUBE_IP}:8443
+  name: minikube
+contexts:
+- context:
+    cluster: minikube
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+preferences: {}
+users:
+- name: minikube
+  user:
+    client-certificate: ${MINIKUBE_HOME}/profiles/minikube/client.crt
+    client-key: ${MINIKUBE_HOME}/profiles/minikube/client.key
+EOF
+                        fi
+
+                        # Исправляем пути в существующем kubeconfig
+                        if [ -f "${KUBECONFIG}" ]; then
+                            cp ${KUBECONFIG} ${KUBECONFIG}.backup
+                            sed -i "s|/Users/.*/\\.minikube|${MINIKUBE_HOME}|g" ${KUBECONFIG}
+                            echo "Kubeconfig updated successfully"
+                        fi
+
+                        # Проверяем доступ
+                        echo "=== Testing Kubernetes access ==="
+                        kubectl cluster-info && echo "✓ Kubernetes access successful" || echo "✗ Kubernetes access failed"
+                    '''
+                }
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                script {
+                    echo 'Building Spring Boot application...'
+                    sh 'mvn clean package -DskipTests'
+
+                    // Архивируем артефакт
+                    archiveArtifacts 'target/*.jar'
+                }
+            }
+        }
+
+        stage('Build and Load Docker Image') {
+            steps {
+                script {
+                    echo 'Building Docker image and loading into Minikube...'
+
+                    sh """
+                        # Собираем Docker образ
+                        docker build -t ${env.DOCKER_IMAGE} .
+
+                        # Загружаем образ в Minikube
+                        minikube image load ${env.DOCKER_IMAGE}
+
+                        # Тегируем как latest для использования в манифестах
+                        minikube image tag ${env.DOCKER_IMAGE} spring-app:latest
+
+                        echo "✓ Docker image built and loaded: ${env.DOCKER_IMAGE}"
+
+                        # Проверяем что образ доступен в Minikube
+                        minikube image ls | grep spring-app || echo "⚠ Image not found in Minikube"
                     """
                 }
             }
         }
 
-        stage('Deploy to Minikube') {
+        stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    // Создаем namespace если не существует
-                    sh "kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -"
+                    echo 'Deploying to Kubernetes using existing manifests...'
 
-                    // Применяем Kubernetes манифесты (если есть)
                     sh """
-                        if [ -d "k8s" ] && [ -n "\$(ls k8s/)" ]; then
-                            echo "Applying Kubernetes manifests from k8s/"
-                            kubectl apply -f k8s/ --namespace=${env.KUBE_NAMESPACE}
+                        # Создаем namespace если нужно
+                        kubectl create namespace ${env.KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+                        echo "=== Applying manifests from ${K8S_MANIFESTS_DIR} ==="
+
+                        # Применяем deployment
+                        if [ -f "${K8S_MANIFESTS_DIR}/deployment.yaml" ]; then
+                            kubectl apply -f ${K8S_MANIFESTS_DIR}/deployment.yaml --namespace=${env.KUBE_NAMESPACE}
                         else
-                            echo "No k8s manifests found, creating basic deployment"
-
-                            # Создаем деплоймент если не существует
-                            if ! kubectl get deployment spring-app --namespace=${env.KUBE_NAMESPACE} 2>/dev/null; then
-                                kubectl create deployment spring-app \
-                                    --image=spring-app:latest \
-                                    --port=8088 \
-                                    --namespace=${env.KUBE_NAMESPACE}
-
-                                kubectl expose deployment spring-app \
-                                    --type=NodePort \
-                                    --port=80 \
-                                    --target-port=8088 \
-                                    --namespace=${env.KUBE_NAMESPACE}
-                            fi
+                            echo "❌ deployment.yaml not found!"
+                            exit 1
                         fi
-                    """
 
-                    // Обновляем образ в деплойменте
-                    sh """
-                        kubectl set image deployment/spring-app \
-                            spring-app=${env.DOCKER_IMAGE} \
-                            --namespace=${env.KUBE_NAMESPACE}
+                        # Применяем service
+                        if [ -f "${K8S_MANIFESTS_DIR}/service.yaml" ]; then
+                            kubectl apply -f ${K8S_MANIFESTS_DIR}/service.yaml --namespace=${env.KUBE_NAMESPACE}
+                        else
+                            echo "❌ service.yaml not found!"
+                            exit 1
+                        fi
 
-                        echo "Image updated in deployment"
-                    """
-
-                    // Ждем готовности
-                    sh """
-                        kubectl rollout status deployment/spring-app \
-                            --timeout=300s \
-                            --namespace=${env.KUBE_NAMESPACE}
+                        echo "✓ Manifests applied successfully"
                     """
                 }
             }
@@ -152,93 +168,97 @@ pipeline {
                 script {
                     echo 'Verifying deployment...'
 
-                    // Проверяем статус ресурсов
                     sh """
-                        echo "=== Pods ==="
-                        kubectl get pods --namespace=${env.KUBE_NAMESPACE} -o wide
-
-                        echo "=== Services ==="
-                        kubectl get services --namespace=${env.KUBE_NAMESPACE}
-
-                        echo "=== Deployments ==="
-                        kubectl get deployments --namespace=${env.KUBE_NAMESPACE}
-                    """
-
-                    // Получаем URL приложения
-                    sh """
-                        # Ждем пока сервис будет готов
+                        # Даем время для запуска подов
                         sleep 10
 
-                        # Получаем URL
-                        APP_URL=\$(minikube service spring-app --url --namespace=${env.KUBE_NAMESPACE} 2>/dev/null || echo "")
+                        echo "=== Deployment Status ==="
+                        kubectl get deployment spring-app --namespace=${env.KUBE_NAMESPACE} -o wide
 
-                        if [ -n "\$APP_URL" ]; then
-                            echo "Application URL: \$APP_URL"
+                        echo "=== Pod Status ==="
+                        kubectl get pods --namespace=${env.KUBE_NAMESPACE} -l app=spring-app -o wide
 
-                            # Пробуем проверить здоровье приложения
-                            sleep 20
-                            curl -s \$APP_URL/actuator/health || echo "Health endpoint not available yet"
-                            curl -s \$APP_URL || echo "Application not responding yet"
+                        echo "=== Service Status ==="
+                        kubectl get service spring-app --namespace=${env.KUBE_NAMESPACE} -o wide
+
+                        echo "=== Pod Logs ==="
+                        POD_NAME=\$(kubectl get pods --namespace=${env.KUBE_NAMESPACE} -l app=spring-app -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+                        if [ -n "\$POD_NAME" ]; then
+                            kubectl logs \$POD_NAME --namespace=${env.KUBE_NAMESPACE} --tail=20
                         else
-                            echo "Could not get application URL"
-                            minikube service list --namespace=${env.KUBE_NAMESPACE}
+                            echo "No pods found for spring-app"
                         fi
                     """
                 }
             }
         }
 
-        stage('Archive Artifact') {
+        stage('Get Application URL') {
             steps {
-                archiveArtifacts 'target/*.jar'
+                script {
+                    echo 'Getting application access information...'
+
+                    sh """
+                        echo "=== Application Access ==="
+
+                        # Получаем URL через minikube service
+                        minikube service spring-app --url --namespace=${env.KUBE_NAMESPACE} || \\
+                        echo "Service URL not available. Use: minikube service spring-app --namespace=${env.KUBE_NAMESPACE}"
+
+                        # Альтернативно: получаем NodePort
+                        NODE_PORT=\$(kubectl get service spring-app --namespace=${env.KUBE_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}')
+                        MINIKUBE_IP=\$(minikube ip)
+                        if [ -n "\$NODE_PORT" ] && [ -n "\$MINIKUBE_IP" ]; then
+                            echo "Direct access: http://\${MINIKUBE_IP}:\${NODE_PORT}"
+                        fi
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            echo 'Build and deployment completed successfully!'
+            echo '🎉 Deployment completed successfully!'
             script {
-                // Получаем URL для уведомления
                 def appUrl = sh(
-                    script: "minikube service spring-app --url --namespace=${env.KUBE_NAMESPACE} 2>/dev/null || echo 'URL-not-available'",
+                    script: """
+                        MINIKUBE_IP=\$(minikube ip 2>/dev/null || echo "192.168.49.2")
+                        NODE_PORT=\$(kubectl get service spring-app --namespace=${env.KUBE_NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+                        if [ -n "\$NODE_PORT" ]; then
+                            echo "http://\${MINIKUBE_IP}:\${NODE_PORT}"
+                        else
+                            echo "Use: minikube service spring-app --namespace=${env.KUBE_NAMESPACE}"
+                        fi
+                    """,
                     returnStdout: true
                 ).trim()
 
-                echo "🎉 Deployment Successful!"
                 echo "📦 Docker Image: ${env.DOCKER_IMAGE}"
                 echo "🌐 Application URL: ${appUrl}"
-                echo "📊 Kubernetes Namespace: ${env.KUBE_NAMESPACE}"
+                echo "📊 Namespace: ${env.KUBE_NAMESPACE}"
+                echo "🚀 replicas: 2"
             }
         }
         failure {
-            echo 'Build or deployment failed!'
+            echo '❌ Deployment failed!'
             script {
-                // Диагностика при ошибке
-                echo "❌ Deployment Failed - gathering diagnostics..."
-
                 sh """
-                    echo "=== Pods ==="
+                    echo "=== Debug Information ==="
+                    echo "Kubernetes pods:"
                     kubectl get pods --namespace=${env.KUBE_NAMESPACE} || true
 
-                    echo "=== Pod Logs ==="
-                    kubectl logs -l app=spring-app --tail=50 --namespace=${env.KUBE_NAMESPACE} || true
+                    echo "Kubernetes events:"
+                    kubectl get events --namespace=${env.KUBE_NAMESPACE} --sort-by=.lastTimestamp | tail -10 || true
 
-                    echo "=== Docker Images ==="
-                    eval \$(minikube docker-env)
-                    docker images | grep spring-app || true
+                    echo "Deployment details:"
+                    kubectl describe deployment spring-app --namespace=${env.KUBE_NAMESPACE} || true
                 """
             }
         }
         always {
             echo 'Pipeline execution completed'
-            script {
-                // Очистка
-                sh """
-                    echo "Cleaning up temporary files..."
-                    rm -f /var/jenkins_home/.kube/config.backup 2>/dev/null || true
-                """
-            }
+            cleanWs()
         }
     }
 }
